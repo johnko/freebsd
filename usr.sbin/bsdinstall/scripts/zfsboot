@@ -1175,11 +1175,6 @@ zfs_create_boot()
 	fi
 	local n=0
 	for disk in $disks; do
-		if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
-			glabeldisktarget=$disk$targetpart
-		else
-			glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
-		fi
 		zfs_create_diskpart $disk $n || return $FAILURE
 		# Now $bootpart, $targetpart, and $swappart are set (suffix
 		# for $disk)

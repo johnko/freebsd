@@ -313,6 +313,42 @@ msg_zfs_configuration="ZFS Configuration"
 
 ############################################################ FUNCTIONS
 
+# glabel_of_diskpart
+#
+# Translate $disk$part to its glabel(8) or gptid, otherwise $disk$part
+#
+glabel_of_diskpart()
+{
+	local disk_and_part="$1"
+	if [ -n "${disk_and_part}" ]; then
+		local gptid=$( glabel status -s ${disk_and_part} | cut -f1 -w )
+		if [ -n "${gptid}" ]; then
+			echo ${gptid}
+			return 0
+		fi
+	fi
+	echo ${disk_and_part}
+	return 1
+}
+
+# safe_glabel_of_diskpart
+#
+# Translate $disk$part to its glabel(8) or gptid and translate / to _ , otherwise $disk$part
+#
+safe_glabel_of_diskpart()
+{
+	local disk_and_part="$1"
+	if [ -n "${disk_and_part}" ]; then
+		local gptid=$( glabel status -s ${disk_and_part} | cut -f1 -w | tr / _ )
+		if [ -n "${gptid}" ]; then
+			echo ${gptid}
+			return 0
+		fi
+	fi
+	echo ${disk_and_part}
+	return 1
+}
+
 # dialog_menu_main
 #
 # Display the dialog(1)-based application main menu.
@@ -1055,6 +1091,7 @@ zfs_create_boot()
 	local isswapmirror
 	local bootpart targetpart swappart # Set by zfs_create_diskpart() below
 	local create_options
+	local glabeldisktarget
 
 	#
 	# Pedantic checks; should never be seen
@@ -1138,13 +1175,18 @@ zfs_create_boot()
 	fi
 	local n=0
 	for disk in $disks; do
+		if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
+			glabeldisktarget=$disk$targetpart
+		else
+			glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
+		fi
 		zfs_create_diskpart $disk $n || return $FAILURE
 		# Now $bootpart, $targetpart, and $swappart are set (suffix
 		# for $disk)
 		if [ "$ZFSBOOT_BOOT_POOL" ]; then
-			boot_vdevs="$boot_vdevs $disk$bootpart"
+			boot_vdevs="$boot_vdevs $( glabel_of_diskpart $disk$bootpart )"
 		fi
-		zroot_vdevs="$zroot_vdevs $disk$targetpart"
+		zroot_vdevs="$zroot_vdevs $( glabel_of_diskpart $disk$targetpart )"
 		if [ "$ZFSBOOT_GELI_ENCRYPTION" ]; then
 			zroot_vdevs="$zroot_vdevs.eli"
 		fi
@@ -1220,13 +1262,18 @@ zfs_create_boot()
 
 		# Initialize geli(8) on each of the target partitions
 		for disk in $disks; do
+			if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
+				glabeldisktarget=$disk$targetpart
+			else
+				glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
+			fi
 			f_dialog_info "$msg_geli_setup" \
 				2>&1 >&$DIALOG_TERMINAL_PASSTHRU_FD
 			if ! echo "$pw_password" | f_eval_catch \
 				$funcname geli "$GELI_PASSWORD_INIT" \
-				"$bootpool/boot/$disk$targetpart.eli" \
+				"$bootpool/boot/$glabeldisktarget.eli" \
 				AES-XTS "$bootpool/$zroot_key" \
-				$disk$targetpart
+				$glabeldisktarget
 			then
 				f_interactive || f_die
 				unset pw_password # Sensitive info
@@ -1234,7 +1281,7 @@ zfs_create_boot()
 			fi
 			if ! echo "$pw_password" | f_eval_catch \
 				$funcname geli "$GELI_ATTACH" \
-				"$bootpool/$zroot_key" $disk$targetpart
+				"$bootpool/$zroot_key" $glabeldisktarget
 			then
 				f_interactive || f_die
 				unset pw_password # Sensitive info
@@ -1376,6 +1423,9 @@ zfs_create_boot()
 	             'kern.geom.label.disk_ident.enable=\"0\"' \
 	             $BSDINSTALL_TMPBOOT/loader.conf.zfs || return $FAILURE
 	f_eval_catch $funcname echo "$ECHO_APPEND" \
+	             'kern.geom.label.gpt.enable=\"1\"' \
+	             $BSDINSTALL_TMPBOOT/loader.conf.zfs || return $FAILURE
+	f_eval_catch $funcname echo "$ECHO_APPEND" \
 	             'kern.geom.label.gptid.enable=\"0\"' \
 	             $BSDINSTALL_TMPBOOT/loader.conf.zfs || return $FAILURE
 
@@ -1424,19 +1474,24 @@ zfs_create_boot()
 		'geom_eli_passphrase_prompt=\"YES\"' \
 		$BSDINSTALL_TMPBOOT/loader.conf.geli || return $FAILURE
 	for disk in $disks; do
+		if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
+			glabeldisktarget=$disk$targetpart
+		else
+			glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
+		fi
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
-			geli_%s_keyfile0_load "$disk$targetpart YES" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$disk$targetpart ||
+			geli_%s_keyfile0_load "$glabeldisktarget YES" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
 			return $FAILURE
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
 			geli_%s_keyfile0_type \
-			"$disk$targetpart $disk$targetpart:geli_keyfile0" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$disk$targetpart ||
+			"$glabeldisktarget $glabeldisktarget:geli_keyfile0" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
 			return $FAILURE
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
 			geli_%s_keyfile0_name \
-			"$disk$targetpart \"$ZFSBOOT_GELI_KEY_FILE\"" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$disk$targetpart ||
+			"$glabeldisktarget \"$ZFSBOOT_GELI_KEY_FILE\"" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
 			return $FAILURE
 	done
 

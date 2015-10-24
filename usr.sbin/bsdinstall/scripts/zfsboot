@@ -41,6 +41,11 @@ f_include $BSDCFG_SHARE/variable.subr
 ############################################################ CONFIGURATION
 
 #
+# Use gptid or glabels
+#
+: ${ZFSBOOT_USE_GPTID=}
+
+#
 # Default name of the boot-pool
 #
 : ${ZFSBOOT_POOL_NAME:=zroot}
@@ -794,6 +799,8 @@ zfs_create_diskpart()
 {
 	local funcname=zfs_create_diskpart
 	local disk="$1" index="$2"
+	# Create a short-ish uuid to append to index because glabel max length is about 15
+	local uuid=$( uuidgen | md5 | cut -c1-6 )
 
 	# Check arguments
 	if [ ! "$disk" ]; then
@@ -890,11 +897,17 @@ zfs_create_diskpart()
 		fi
 
 		#
-		# 2. Add small freebsd-boot partition
+		# 2. Add small freebsd-boot partition labeled `gptboot#'
 		#
-		f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
-		             "$align_small" $index freebsd-boot 512k $disk ||
-		             return $FAILURE
+		if [ "$ZFSBOOT_USE_GPTID" ]; then
+			f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
+					"$align_small" $index freebsd-boot 512k $disk ||
+					return $FAILURE
+		else
+			f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_LABEL_WITH_SIZE" \
+					"$align_small" gptboot$index$uuid freebsd-boot 512k $disk ||
+					return $FAILURE
+		fi
 		f_eval_catch $funcname gpart "$GPART_BOOTCODE_PART" \
 		             /boot/pmbr /boot/gptzfsboot 1 $disk ||
 		             return $FAILURE
@@ -904,16 +917,24 @@ zfs_create_diskpart()
 		[ ${swapsize:-0} -gt 0 ] && targetpart=p3
 
 		#
-		# Prepare boot pool if enabled (e.g., for geli(8))
+		# Prepare boot pool if enabled (e.g., for geli(8)) labeled `boot#'
 		#
 		if [ "$ZFSBOOT_BOOT_POOL" ]; then
 			bootpart=p2 swappart=p3 targetpart=p3
 			[ ${swapsize:-0} -gt 0 ] && targetpart=p4
-			f_eval_catch $funcname gpart \
-			             "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
-			             "$align_big" $index freebsd-zfs \
-			             ${bootsize}b $disk ||
-			             return $FAILURE
+			if [ "$ZFSBOOT_USE_GPTID" ]; then
+				f_eval_catch $funcname gpart \
+						"$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
+						"$align_big" $index freebsd-zfs \
+						${bootsize}b $disk ||
+						return $FAILURE
+			else
+				f_eval_catch $funcname gpart \
+						"$GPART_ADD_ALIGN_LABEL_WITH_SIZE" \
+						"$align_big" boot$index$uuid freebsd-zfs \
+						${bootsize}b $disk ||
+						return $FAILURE
+			fi
 			# Pedantically nuke any old labels
 			f_eval_catch -d $funcname zpool "$ZPOOL_LABELCLEAR_F" \
 			                /dev/$disk$bootpart
@@ -931,14 +952,22 @@ zfs_create_diskpart()
 		fi
 
 		#
-		# 3. Add freebsd-swap partition
+		# 3. Add freebsd-swap partition labeled `swap#'
 		#
 		if [ ${swapsize:-0} -gt 0 ]; then
-			f_eval_catch $funcname gpart \
-			             "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
-			             "$align_big" $index freebsd-swap \
-			             ${swapsize}b $disk ||
-			             return $FAILURE
+			if [ "$ZFSBOOT_USE_GPTID" ]; then
+				f_eval_catch $funcname gpart \
+						"$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
+						"$align_big" $index freebsd-swap \
+						${swapsize}b $disk ||
+						return $FAILURE
+			else
+				f_eval_catch $funcname gpart \
+						"$GPART_ADD_ALIGN_LABEL_WITH_SIZE" \
+						"$align_big" swap$index$uuid freebsd-swap \
+						${swapsize}b $disk ||
+						return $FAILURE
+			fi
 			# Pedantically nuke any old labels on the swap
 			f_eval_catch -d $funcname zpool "$ZPOOL_LABELCLEAR_F" \
 			                /dev/$disk$swappart
@@ -947,16 +976,28 @@ zfs_create_diskpart()
 		fi
 
 		#
-		# 4. Add freebsd-zfs partition for zroot
+		# 4. Add freebsd-zfs partition labeled `zfs#' for zroot
 		#
 		if [ "$ZFSBOOT_POOL_SIZE" ]; then
-			f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
-		             "$align_big" $index freebsd-zfs $ZFSBOOT_POOL_SIZE $disk ||
-		             return $FAILURE
+			if [ "$ZFSBOOT_USE_GPTID" ]; then
+				f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX_WITH_SIZE" \
+						"$align_big" $index freebsd-zfs $ZFSBOOT_POOL_SIZE $disk ||
+						return $FAILURE
+			else
+				f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_LABEL_WITH_SIZE" \
+						"$align_big" zfs$index$uuid freebsd-zfs $ZFSBOOT_POOL_SIZE $disk ||
+						return $FAILURE
+			fi
 		else
-		f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX" \
-		             "$align_big" $index freebsd-zfs $disk ||
-		             return $FAILURE
+			if [ "$ZFSBOOT_USE_GPTID" ]; then
+				f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_INDEX" \
+						"$align_big" $index freebsd-zfs $disk ||
+						return $FAILURE
+			else
+				f_eval_catch $funcname gpart "$GPART_ADD_ALIGN_LABEL" \
+						"$align_big" zfs$index$uuid freebsd-zfs $disk ||
+						return $FAILURE
+			fi
 		fi
 		f_eval_catch -d $funcname zpool "$ZPOOL_LABELCLEAR_F" \
 		                /dev/$disk$targetpart

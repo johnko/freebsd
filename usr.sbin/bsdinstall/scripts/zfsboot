@@ -1058,14 +1058,14 @@ zfs_create_diskpart()
 		isswapmirror=1
 	elif [ "$ZFSBOOT_SWAP_ENCRYPTION" ]; then
 		f_eval_catch $funcname printf "$PRINTF_FSTAB" \
-		             /dev/$( glabel_of_diskpart $disk$swappart ).eli none swap sw 0 0 \
+		             /dev/$disk${swappart}.eli none swap sw 0 0 \
 		             $BSDINSTALL_TMPETC/fstab ||
 		             return $FAILURE
 	elif [ ${swapsize:-0} -eq 0 ]; then
 		# If swap is 0 sized, don't add it to fstab
 	else
 		f_eval_catch $funcname printf "$PRINTF_FSTAB" \
-		             /dev/$( glabel_of_diskpart $disk$swappart ) none swap sw 0 0 \
+		             /dev/$disk$swappart none swap sw 0 0 \
 		             $BSDINSTALL_TMPETC/fstab ||
 		             return $FAILURE
 	fi
@@ -1179,11 +1179,15 @@ zfs_create_boot()
 		# Now $bootpart, $targetpart, and $swappart are set (suffix
 		# for $disk)
 		if [ "$ZFSBOOT_BOOT_POOL" ]; then
-			boot_vdevs="$boot_vdevs $( glabel_of_diskpart $disk$bootpart )"
+			boot_vdevs="$boot_vdevs $disk$bootpart"
 		fi
-		zroot_vdevs="$zroot_vdevs $( glabel_of_diskpart $disk$targetpart )"
+		# If using GELI we need to convert $disk$targetpart to the glabel
+		# so that the keyfile in loader.conf(5) will use the correct one
+		# if ever the disk order is different
 		if [ "$ZFSBOOT_GELI_ENCRYPTION" ]; then
-			zroot_vdevs="$zroot_vdevs.eli"
+			zroot_vdevs="$zroot_vdevs $( glabel_of_diskpart $disk$targetpart ).eli"
+		else
+			zroot_vdevs="$zroot_vdevs $disk$targetpart"
 		fi
 
 		n=$(( $n + 1 ))
@@ -1298,12 +1302,7 @@ zfs_create_boot()
 	#
 	if [ "$ZFSBOOT_SWAP_MIRROR" ]; then
 		for disk in $disks; do
-			if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
-				glabeldisktarget=$disk$swappart
-			else
-				glabeldisktarget=$( glabel_of_diskpart $disk$swappart )
-			fi
-			swap_devs="$swap_devs $glabeldisktarget"
+			swap_devs="$swap_devs $disk$swappart"
 		done
 		f_eval_catch $funcname gmirror "$SWAP_GMIRROR_LABEL" \
 			"$swap_devs" || return $FAILURE

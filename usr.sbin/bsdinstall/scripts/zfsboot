@@ -45,7 +45,7 @@ f_include $BSDCFG_SHARE/variable.subr
 : ${ZFSBOOT_POOL_NAME:=zroot}
 
 #
-# Default pool size
+# Default pool size is optional
 #
 : ${ZFSBOOT_POOL_SIZE=}
 

@@ -321,7 +321,7 @@ glabel_of_diskpart()
 {
 	local disk_and_part="$1"
 	if [ -n "${disk_and_part}" ]; then
-		local gptid=$( glabel status -s ${disk_and_part} | cut -f1 -w )
+		local gptid=$( glabel status -s ${disk_and_part} | awk '{print $1}' )
 		if [ -n "${gptid}" ]; then
 			echo ${gptid}
 			return 0
@@ -339,7 +339,7 @@ safe_glabel_of_diskpart()
 {
 	local disk_and_part="$1"
 	if [ -n "${disk_and_part}" ]; then
-		local gptid=$( glabel status -s ${disk_and_part} | cut -f1 -w | tr / _ )
+		local gptid=$( glabel status -s ${disk_and_part} | awk '{print $1}' | tr / _ )
 		if [ -n "${gptid}" ]; then
 			echo ${gptid}
 			return 0

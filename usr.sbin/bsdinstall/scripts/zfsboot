@@ -1058,14 +1058,14 @@ zfs_create_diskpart()
 		isswapmirror=1
 	elif [ "$ZFSBOOT_SWAP_ENCRYPTION" ]; then
 		f_eval_catch $funcname printf "$PRINTF_FSTAB" \
-		             /dev/$disk${swappart}.eli none swap sw 0 0 \
+		             /dev/$( glabel_of_diskpart $disk$swappart ).eli none swap sw 0 0 \
 		             $BSDINSTALL_TMPETC/fstab ||
 		             return $FAILURE
 	elif [ ${swapsize:-0} -eq 0 ]; then
 		# If swap is 0 sized, don't add it to fstab
 	else
 		f_eval_catch $funcname printf "$PRINTF_FSTAB" \
-		             /dev/$disk$swappart none swap sw 0 0 \
+		             /dev/$( glabel_of_diskpart $disk$swappart ) none swap sw 0 0 \
 		             $BSDINSTALL_TMPETC/fstab ||
 		             return $FAILURE
 	fi
@@ -1091,7 +1091,7 @@ zfs_create_boot()
 	local isswapmirror
 	local bootpart targetpart swappart # Set by zfs_create_diskpart() below
 	local create_options
-	local glabeldisktarget
+	local glabeldisktarget safeglabeldisktarget
 
 	#
 	# Pedantic checks; should never be seen
@@ -1259,14 +1259,16 @@ zfs_create_boot()
 		for disk in $disks; do
 			if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
 				glabeldisktarget=$disk$targetpart
+				safeglabeldisktarget=$disk$targetpart
 			else
-				glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
+				glabeldisktarget=$( glabel_of_diskpart $disk$targetpart )
+				safeglabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
 			fi
 			f_dialog_info "$msg_geli_setup" \
 				2>&1 >&$DIALOG_TERMINAL_PASSTHRU_FD
 			if ! echo "$pw_password" | f_eval_catch \
 				$funcname geli "$GELI_PASSWORD_INIT" \
-				"$bootpool/boot/$glabeldisktarget.eli" \
+				"$bootpool/boot/$safeglabeldisktarget.eli" \
 				AES-XTS "$bootpool/$zroot_key" \
 				$glabeldisktarget
 			then
@@ -1296,7 +1298,12 @@ zfs_create_boot()
 	#
 	if [ "$ZFSBOOT_SWAP_MIRROR" ]; then
 		for disk in $disks; do
-			swap_devs="$swap_devs $disk$swappart"
+			if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
+				glabeldisktarget=$disk$swappart
+			else
+				glabeldisktarget=$( glabel_of_diskpart $disk$swappart )
+			fi
+			swap_devs="$swap_devs $glabeldisktarget"
 		done
 		f_eval_catch $funcname gmirror "$SWAP_GMIRROR_LABEL" \
 			"$swap_devs" || return $FAILURE
@@ -1471,22 +1478,24 @@ zfs_create_boot()
 	for disk in $disks; do
 		if [ "$ZFSBOOT_PARTITION_SCHEME" = "MBR" ]; then
 			glabeldisktarget=$disk$targetpart
+			safeglabeldisktarget=$disk$targetpart
 		else
-			glabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
+			glabeldisktarget=$( glabel_of_diskpart $disk$targetpart )
+			safeglabeldisktarget=$( safe_glabel_of_diskpart $disk$targetpart )
 		fi
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
-			geli_%s_keyfile0_load "$glabeldisktarget YES" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
+			geli_%s_keyfile0_load "$safeglabeldisktarget YES" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$safeglabeldisktarget ||
 			return $FAILURE
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
 			geli_%s_keyfile0_type \
-			"$glabeldisktarget $glabeldisktarget:geli_keyfile0" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
+			"$safeglabeldisktarget $glabeldisktarget:geli_keyfile0" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$safeglabeldisktarget ||
 			return $FAILURE
 		f_eval_catch $funcname printf "$PRINTF_CONF" \
 			geli_%s_keyfile0_name \
-			"$glabeldisktarget \"$ZFSBOOT_GELI_KEY_FILE\"" \
-			$BSDINSTALL_TMPBOOT/loader.conf.$glabeldisktarget ||
+			"$safeglabeldisktarget \"$ZFSBOOT_GELI_KEY_FILE\"" \
+			$BSDINSTALL_TMPBOOT/loader.conf.$safeglabeldisktarget ||
 			return $FAILURE
 	done
 

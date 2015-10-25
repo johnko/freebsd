@@ -1099,18 +1099,20 @@ zfs_create_boot()
 		           "$ZFSBOOT_BOOT_POOL_SIZE"
 		return $FAILURE
 	fi
-	if [ "$ZFSBOOT_POOL_SIZE" ] && ! f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize; then
-		f_dprintf "$funcname: Invalid pool size \`%s'" \
-			  "$ZFSBOOT_POOL_SIZE"
-		f_show_err "$msg_invalid_pool_size" \
-			   "$ZFSBOOT_POOL_SIZE"
+	if [ "$ZFSBOOT_POOL_SIZE" ]; then
+		if ! f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize; then
+			f_dprintf "$funcname: Invalid pool size \`%s'" \
+				  "$ZFSBOOT_POOL_SIZE"
+			f_show_err "$msg_invalid_pool_size" \
+				   "$ZFSBOOT_POOL_SIZE"
+		fi
+		f_dprintf "$funcname: ZFSBOOT_POOL_SIZE=[%s] poolsize=[%s]" \
+			  "$ZFSBOOT_POOL_SIZE" "$poolsize"
 	fi
 	f_dprintf "$funcname: ZFSBOOT_SWAP_SIZE=[%s] swapsize=[%s]" \
 	          "$ZFSBOOT_SWAP_SIZE" "$swapsize"
 	f_dprintf "$funcname: ZFSBOOT_BOOT_POOL_SIZE=[%s] bootsize=[%s]" \
 	          "$ZFSBOOT_BOOT_POOL_SIZE" "$bootsize"
-	f_dprintf "$funcname: ZFSBOOT_POOL_SIZE=[%s] poolsize=[%s]" \
-		  "$ZFSBOOT_POOL_SIZE" "$poolsize"
 
 	#
 	# Destroy the pool in-case this is our second time 'round (case of
@@ -1536,9 +1538,10 @@ while :; do
 
 		# Make sure each disk will be at least 50% ZFS
 		if f_expand_number "$ZFSBOOT_SWAP_SIZE" swapsize &&
-		   f_expand_number "$ZFSBOOT_BOOT_POOL_SIZE" bootsize &&
-		   f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize
+		   f_expand_number "$ZFSBOOT_BOOT_POOL_SIZE" bootsize
 		then
+			[ "$ZFSBOOT_BOOT_POOL" ] && 
+				f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize
 			minsize=$swapsize teeny_disks=
 			[ "$ZFSBOOT_BOOT_POOL" ] &&
 				minsize=$(( $minsize + $bootsize ))

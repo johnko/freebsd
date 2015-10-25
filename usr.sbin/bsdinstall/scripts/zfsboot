@@ -1540,9 +1540,11 @@ while :; do
 		if f_expand_number "$ZFSBOOT_SWAP_SIZE" swapsize &&
 		   f_expand_number "$ZFSBOOT_BOOT_POOL_SIZE" bootsize
 		then
-			[ "$ZFSBOOT_BOOT_POOL" ] && 
-				f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize
 			minsize=$swapsize teeny_disks=
+			if [ "$ZFSBOOT_POOL_SIZE" ]; then
+				f_expand_number "$ZFSBOOT_POOL_SIZE" poolsize
+				minsize=$(( $minsize + $poolsize ))
+			fi
 			[ "$ZFSBOOT_BOOT_POOL" ] &&
 				minsize=$(( $minsize + $bootsize ))
 			for disk in $ZFSBOOT_DISKS; do
